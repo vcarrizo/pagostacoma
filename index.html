@@ -310,6 +310,27 @@
     .detail-table .ben-name{font-size:11.5px;}
     #btnUpload{display:none !important;}
   }
+
+  /* ---------- compartir ---------- */
+  .btn-wa{background:#1f8f4e;border-color:#1f8f4e;color:#fff;display:inline-flex;align-items:center;gap:6px;}
+  .btn-wa:hover{background:#18763f;}
+  .modal-back{
+    position:fixed;inset:0;z-index:150;background:rgba(20,16,10,.55);
+    display:none;align-items:center;justify-content:center;padding:16px;
+  }
+  .modal-back.show{display:flex;}
+  .modal{
+    background:var(--card);border-radius:14px;max-width:560px;width:100%;max-height:calc(100vh - 32px);
+    display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);
+  }
+  .modal-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);}
+  .modal-head b{font-size:14px;}
+  .modal-head button{padding:4px 10px;font-size:16px;line-height:1;}
+  .modal-body{overflow:auto;padding:12px;background:var(--bg);flex:1;}
+  .modal-body img{display:block;width:100%;height:auto;border-radius:8px;box-shadow:var(--shadow);}
+  .modal-note{font-size:11.5px;color:var(--muted);padding:8px 16px 0;}
+  .modal-actions{display:flex;gap:8px;flex-wrap:wrap;padding:12px 16px 14px;}
+  .modal-actions button{flex:1 1 auto;}
 </style>
 </head>
 <body>
@@ -324,6 +345,10 @@
     </div>
   </div>
   <div class="header-actions">
+    <button class="btn btn-wa" id="btnShare" style="display:none" title="Generar imagen para compartir por WhatsApp">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91A9.86 9.86 0 0 0 12.04 2zm0 18.15h-.01a8.23 8.23 0 0 1-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.25-8.24a8.2 8.2 0 0 1 8.24 8.25c0 4.54-3.7 8.23-8.23 8.23zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23a7.4 7.4 0 0 1-1.38-1.72c-.14-.25-.02-.38.11-.51.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42h-.48a.92.92 0 0 0-.66.31c-.23.25-.87.85-.87 2.07s.89 2.4 1.01 2.56c.12.17 1.75 2.67 4.24 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.29z"/></svg>
+      Compartir
+    </button>
     <button class="btn btn-primary" id="btnUpload" style="display:none">Cargar otro listado</button>
   </div>
   <input type="file" id="fileInput" accept=".xls,.xlsx,.csv" multiple>
@@ -393,6 +418,19 @@
 
 <div class="drop-overlay" id="dropOverlay"><div class="box"><b>Soltá el listado para actualizar</b><span>Se reemplazan los datos actuales</span></div></div>
 <div class="toast" id="toast"></div>
+
+<div class="modal-back" id="shareModal" role="dialog" aria-modal="true" aria-label="Compartir imagen">
+  <div class="modal">
+    <div class="modal-head"><b>Imagen para compartir</b><button class="btn-ghost" id="shareClose" aria-label="Cerrar">✕</button></div>
+    <div class="modal-body"><img id="shareImg" alt="Vista previa de la imagen"></div>
+    <div class="modal-note" id="shareNote"></div>
+    <div class="modal-actions">
+      <button class="btn-wa" id="shareNative">Compartir…</button>
+      <button id="shareCopy">Copiar imagen</button>
+      <button id="shareDownload">Descargar</button>
+    </div>
+  </div>
+</div>
 
 <script>
 (function(){
@@ -682,6 +720,7 @@
     emptyState.style.display = hasData ? 'none' : 'block';
     appContent.style.display = hasData ? 'block' : 'none';
     $('btnUpload').style.display = hasData ? '' : 'none';
+    $('btnShare').style.display = hasData ? '' : 'none';
 
     if(!hasData){
       dataInfo.textContent = 'Arrastrá el listado de cheques emitidos para empezar';
@@ -963,6 +1002,251 @@
         </tr></tfoot>
       </table>`;
     if($('clearDay')) $('clearDay').onclick = () => { selectedDate = null; render(); };
+  }
+
+  /* ================= imagen para WhatsApp ================= */
+  let shareBlob = null, shareUrl = null, shareFileName = 'cheques.png';
+  $('btnShare').addEventListener('click', openShare);
+  $('shareClose').addEventListener('click', closeShare);
+  $('shareModal').addEventListener('click', e => { if(e.target.id === 'shareModal') closeShare(); });
+  document.addEventListener('keydown', e => { if(e.key === 'Escape') closeShare(); });
+
+  function closeShare(){ $('shareModal').classList.remove('show'); }
+
+  function shareRows(today){
+    let rows = computeFiltered(today).filter(r => r.cat !== 'anulado');
+    if(selectedDate) rows = rows.filter(r => isSameDay(r.fecha, selectedDate));
+    return rows;
+  }
+
+  async function openShare(){
+    const today = todayDate();
+    const rows = shareRows(today);
+    if(!rows.length){ toast('No hay cheques en la vista actual para compartir.', true); return; }
+    try{
+      const canvas = drawShareImage(rows, today);
+      shareBlob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      if(shareUrl) URL.revokeObjectURL(shareUrl);
+      shareUrl = URL.createObjectURL(shareBlob);
+      const ymd = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+      shareFileName = `cheques-a-pagar-${ymd}.png`;
+      $('shareImg').src = shareUrl;
+      const file = new File([shareBlob], shareFileName, {type:'image/png'});
+      const canNative = !!(navigator.canShare && navigator.canShare({files:[file]}));
+      const canCopy = !!(navigator.clipboard && window.ClipboardItem);
+      $('shareNative').style.display = canNative ? '' : 'none';
+      $('shareCopy').style.display = canCopy ? '' : 'none';
+      $('shareNote').textContent = canNative
+        ? 'Tocá "Compartir…" y elegí WhatsApp.'
+        : 'Copiá la imagen y pegala en el chat de WhatsApp Web (Ctrl+V), o descargala y adjuntala.';
+      $('shareModal').classList.add('show');
+    }catch(err){
+      console.error(err);
+      toast('No se pudo generar la imagen.', true);
+    }
+  }
+
+  $('shareNative').addEventListener('click', async () => {
+    if(!shareBlob) return;
+    try{
+      await navigator.share({files:[new File([shareBlob], shareFileName, {type:'image/png'})]});
+    }catch(err){ if(err && err.name !== 'AbortError') toast('No se pudo abrir el menú de compartir. Probá descargarla.', true); }
+  });
+  $('shareCopy').addEventListener('click', async () => {
+    if(!shareBlob) return;
+    try{
+      await navigator.clipboard.write([new ClipboardItem({'image/png': shareBlob})]);
+      toast('Imagen copiada. Pegala en WhatsApp con Ctrl+V.');
+    }catch(err){ toast('El navegador no permitió copiar. Usá "Descargar".', true); }
+  });
+  $('shareDownload').addEventListener('click', () => {
+    if(!shareUrl) return;
+    const a = document.createElement('a');
+    a.href = shareUrl; a.download = shareFileName;
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  function drawShareImage(rows, today){
+    const W = 1080, P = 56, SCALE = 1;
+    const FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif';
+    const C = {bg:'#f6f4f0', card:'#ffffff', text:'#1f1b16', muted:'#77705f', border:'#e6e1d8',
+      accent:'#2f5d50', accentLight:'#e8f0ed', wood:'#a8763e', red:'#c0362c', redLight:'#fbeceb', amber:'#b86e00', amberLight:'#fff4e0', week:'#f1eee8'};
+    const MAX_ROWS = 28;
+    const sum = arr => arr.reduce((s,r) => s + r.importe, 0);
+
+    // datos
+    const ws0 = startOfWeek(today), we0 = new Date(ws0.getFullYear(), ws0.getMonth(), ws0.getDate() + 6);
+    const in30 = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 30);
+    const pendRows = rows.filter(isPend);
+    const kpis = [
+      {label:'TOTAL', value:fmtMoney(sum(rows)), hint:`${rows.length} cheque${rows.length!==1?'s':''}`, main:true},
+      {label:'RESTA ESTA SEMANA', value:fmtMoney(sum(pendRows.filter(r => r.fecha >= today && r.fecha <= we0))), hint:`hasta el ${fmtDM(we0)}`},
+      {label:'PRÓXIMOS 30 DÍAS', value:fmtMoney(sum(pendRows.filter(r => r.fecha >= today && r.fecha <= in30))), hint:`hasta el ${fmtDM(in30)}`}
+    ];
+    const venc = pendRows.filter(r => r.fecha < today);
+    if(venc.length) kpis.push({label:'VENCIDOS', value:fmtMoney(sum(venc)), hint:`${venc.length} sin debitar`, alert:true});
+
+    const shown = rows.slice(0, MAX_ROWS);
+    const hidden = rows.slice(MAX_ROWS);
+    const groups = [];
+    shown.forEach(r => {
+      const k = +startOfWeek(r.fecha);
+      let g = groups[groups.length - 1];
+      if(!g || g.k !== k){ g = {k, ws:startOfWeek(r.fecha), items:[]}; groups.push(g); }
+      g.items.push(r);
+    });
+    // subtotal de semana sobre TODAS las filas de esa semana (no solo las mostradas)
+    const weekTotals = new Map();
+    rows.forEach(r => { const k = +startOfWeek(r.fecha); weekTotals.set(k, (weekTotals.get(k) || 0) + r.importe); });
+
+    // filtros activos
+    const filtros = [];
+    const est = estadoFilter.value;
+    const TITULOS = {pendientes:'Cheques a pagar', vencidos:'Cheques vencidos sin debitar', pagado:'Cheques pagados', anulado:'Cheques repudiados / anulados', todos:'Cheques emitidos'};
+    const titulo = TITULOS[est] || 'Cheques';
+    if(benefFilter.value) filtros.push(benefFilter.value);
+    if(selectedDate) filtros.push(capitalize(fmtDateLong(selectedDate)));
+    if(searchInput.value.trim()) filtros.push(`"${searchInput.value.trim()}"`);
+    if(onlyFuture.checked) filtros.push('desde hoy');
+
+    // alto
+    const HEAD_H = 150, KPI_H = 128, ROW_H = 64, WEEK_H = 50, SUB_H = 46;
+    const filtH = filtros.length ? 44 : 0;
+    let tableH = 56; // encabezado de columnas
+    const weekCounts = new Map();
+    rows.forEach(r => { const k = +startOfWeek(r.fecha); weekCounts.set(k, (weekCounts.get(k) || 0) + 1); });
+    groups.forEach(g => { g.showSub = (weekCounts.get(g.k) || 0) > 1; tableH += WEEK_H + (g.showSub ? SUB_H : 8); });
+    tableH += shown.length * ROW_H;
+    if(hidden.length) tableH += 56;
+    tableH += 70; // total
+    const H = P + HEAD_H + filtH + KPI_H + 28 + tableH + 28 + 60;
+
+    const cv = document.createElement('canvas');
+    cv.width = W * SCALE; cv.height = H * SCALE;
+    const ctx = cv.getContext('2d');
+    ctx.scale(SCALE, SCALE);
+    const font = (w, px) => `${w} ${px}px ${FONT}`;
+    const txt = (s, x, y, f, color, align='left') => { ctx.font = f; ctx.fillStyle = color; ctx.textAlign = align; ctx.fillText(s, x, y); };
+    const fit = (s, maxW, f) => {
+      ctx.font = f;
+      if(ctx.measureText(s).width <= maxW) return s;
+      let t = s;
+      while(t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+      return t.trimEnd() + '…';
+    };
+    const rrect = (x, y, w, h, r, fill, stroke) => {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+      if(fill){ ctx.fillStyle = fill; ctx.fill(); }
+      if(stroke){ ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+    };
+    ctx.textBaseline = 'alphabetic';
+
+    // fondo
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    rrect(24, 24, W - 48, H - 48, 28, C.card);
+
+    // encabezado
+    let y = P + 8;
+    const logo = document.querySelector('.brand img');
+    let lx = P + 8;
+    if(logo && logo.complete && logo.naturalWidth){
+      const lh = 76, lw = logo.naturalWidth / logo.naturalHeight * lh;
+      ctx.drawImage(logo, lx, y, lw, lh);
+      lx += lw + 28;
+      ctx.fillStyle = C.border; ctx.fillRect(lx - 14, y + 6, 2, lh - 12);
+    }
+    const empresas = meta ? Array.from(new Set(meta.files.map(f => (f.empresa || '').replace(/^\d{11}\s*-\s*/, '')).filter(Boolean))) : [];
+    txt(titulo, lx + 6, y + 36, font(750, 38), C.text);
+    txt(fit((empresas.join(' · ') || 'Planificación de pagos') + ' · al ' + today.toLocaleDateString('es-AR', {weekday:'short', day:'numeric', month:'short', year:'numeric'}), W - P - 8 - lx - 6, font(500, 24)), lx + 6, y + 72, font(500, 24), C.muted);
+    y = P + HEAD_H;
+
+    if(filtros.length){
+      const ft = fit('Filtro: ' + filtros.join(' · '), W - 2*P - 40, font(600, 22));
+      ctx.font = font(600, 22);
+      const fw = ctx.measureText(ft).width + 32;
+      rrect(P + 8, y - 26, fw, 40, 20, C.accentLight);
+      txt(ft, P + 24, y + 2, font(600, 22), C.accent);
+      y += filtH;
+    }
+
+    // KPIs
+    const gap = 16, kw = (W - 2*P - 16 - gap * (kpis.length - 1)) / kpis.length;
+    kpis.forEach((k, i) => {
+      const x = P + 8 + i * (kw + gap);
+      rrect(x, y, kw, KPI_H - 16, 18, k.main ? C.accent : (k.alert ? C.redLight : C.bg));
+      const lc = k.main ? 'rgba(255,255,255,.78)' : (k.alert ? C.red : C.muted);
+      txt(k.label, x + 20, y + 34, font(700, 17), lc);
+      let vs = 34; ctx.font = font(800, vs);
+      while(ctx.measureText(k.value).width > kw - 40 && vs > 20){ vs -= 1; ctx.font = font(800, vs); }
+      txt(k.value, x + 20, y + 74, font(800, vs), k.main ? '#fff' : (k.alert ? C.red : C.text));
+      txt(k.hint, x + 20, y + 100, font(500, 18), lc);
+    });
+    y += KPI_H + 28;
+
+    // tabla
+    const X0 = P + 8, X1 = W - P - 8;
+    const colFecha = X0 + 16, colBen = X0 + 200, colImp = X1 - 16;
+    txt('PAGO', colFecha, y + 30, font(700, 17), C.muted);
+    txt('BENEFICIARIO', colBen, y + 30, font(700, 17), C.muted);
+    txt('IMPORTE', colImp, y + 30, font(700, 17), C.muted, 'right');
+    y += 56;
+
+    groups.forEach(g => {
+      const we = new Date(g.ws.getFullYear(), g.ws.getMonth(), g.ws.getDate() + 6);
+      rrect(X0, y, X1 - X0, WEEK_H - 8, 10, C.week);
+      const isCur = g.k === +ws0;
+      txt(`SEMANA DEL ${fmtDM(g.ws).toUpperCase()} AL ${fmtDM(we).toUpperCase()}${isCur ? ' · ESTA SEMANA' : ''}`, X0 + 16, y + 29, font(700, 18), isCur ? C.wood : C.muted);
+      y += WEEK_H;
+      g.items.forEach(r => {
+        const dateStr = r.fecha.toLocaleDateString('es-AR', {weekday:'short'}).replace('.', '');
+        const isVenc = isPend(r) && r.fecha < today;
+        txt(capitalize(dateStr) + ' ' + String(r.fecha.getDate()).padStart(2,'0') + '/' + String(r.fecha.getMonth()+1).padStart(2,'0'), colFecha, y + 30, font(700, 25), isVenc ? C.red : C.text);
+        // tag de estado
+        let tag = null;
+        if(isVenc) tag = {t:'VENCIDO', bg:C.redLight, c:C.red};
+        else if(r.cat === 'pendacep') tag = {t:'PEND. ACEPTACIÓN', bg:C.amberLight, c:C.amber};
+        else if(r.cat === 'pagado') tag = {t:'PAGADO', bg:C.accentLight, c:C.accent};
+        const impF = font(750, 26);
+        ctx.font = impF;
+        const impW = ctx.measureText(fmtMoney(r.importe)).width;
+        let benMax = colImp - impW - 28 - colBen;
+        let tagW = 0;
+        if(tag){ ctx.font = font(700, 15); tagW = ctx.measureText(tag.t).width + 20; benMax -= tagW + 12; }
+        const name = fit(r.razon, benMax, font(650, 25));
+        txt(name, colBen, y + 30, font(650, 25), C.text);
+        if(tag){
+          ctx.font = font(650, 25);
+          const tx = colBen + ctx.measureText(name).width + 12;
+          rrect(tx, y + 9, tagW, 28, 14, tag.bg);
+          txt(tag.t, tx + 10, y + 29, font(700, 15), tag.c);
+        }
+        txt('N° ' + (r.numero || '—'), colBen, y + 54, font(500, 17), C.muted);
+        txt(fmtMoney(r.importe), colImp, y + 30, impF, C.text, 'right');
+        y += ROW_H;
+        ctx.fillStyle = C.border; ctx.fillRect(X0 + 16, y - 4, X1 - X0 - 32, 1);
+      });
+      if(g.showSub){
+        txt('Subtotal semana', colBen, y + 26, font(650, 19), C.muted);
+        txt(fmtMoney(weekTotals.get(g.k) || 0), colImp, y + 26, font(750, 21), C.muted, 'right');
+        y += SUB_H;
+      } else y += 8;
+    });
+
+    if(hidden.length){
+      txt(`+ ${hidden.length} cheque${hidden.length!==1?'s':''} más (hasta el ${fmtD(hidden[hidden.length-1].fecha)}) por ${fmtMoney(sum(hidden))}`, X0 + 16, y + 34, font(600, 20), C.muted);
+      y += 56;
+    }
+
+    ctx.fillStyle = C.text; ctx.fillRect(X0, y + 6, X1 - X0, 3);
+    txt(`Total · ${rows.length} cheque${rows.length!==1?'s':''}`, X0 + 16, y + 52, font(750, 26), C.text);
+    txt(fmtMoney(sum(rows)), colImp, y + 52, font(800, 32), C.accent, 'right');
+    y += 70 + 28;
+
+    const now = new Date();
+    txt(`Generado el ${now.toLocaleDateString('es-AR')} ${now.toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'})}` + (meta && meta.files[0] && meta.files[0].descarga ? ` · listado del banco del ${meta.files[0].descarga.slice(0,16)}` : ''), W / 2, y + 16, font(500, 17), C.muted, 'center');
+    return cv;
   }
 
   // refrescar "hoy" si la pestaña queda abierta de un día para otro
