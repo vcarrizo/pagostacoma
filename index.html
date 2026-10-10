@@ -503,8 +503,8 @@
      La clave "publishable" (o "anon") es pública por diseño: la seguridad la dan
      el login y las políticas RLS de supabase/setup.sql.
      Si se dejan vacías, la web funciona en modo local (sin base de datos). */
-  const SUPABASE_URL = '__SUPABASE_URL__';
-  const SUPABASE_KEY = '__SUPABASE_KEY__';
+  const SUPABASE_URL = 'https://bmvsgvwnkqhpqogelfct.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_g_JbNMrfQjjsfjvsoyTf7Q_gR-r8SL0';
   const CLOUD = /^https:\/\//.test(SUPABASE_URL) && SUPABASE_KEY.length > 20;
 
   let sb = null;          // cliente supabase
